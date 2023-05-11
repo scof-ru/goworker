@@ -17,10 +17,13 @@ package goworker
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // Job structure
@@ -36,6 +39,12 @@ var _ GoJob = (*Job)(nil)
 func (j *Job) DoIt() {
 	j.SomeJobResult = j.SomeJobData
 	j.Done = true
+}
+
+func (j *Job) GetId() string {
+	rand.Seed(time.Now().UnixNano())
+
+	return fmt.Sprintf("Id_%d", rand.Int())
 }
 
 func TestGoWorker(t *testing.T) {

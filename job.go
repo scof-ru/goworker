@@ -16,6 +16,8 @@
 package goworker
 
 // GoJob is interface for jobs
+// GetId must return unique id for the task
 type GoJob interface {
+	GetId() string
 	DoIt()
 }

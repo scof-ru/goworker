@@ -21,19 +21,21 @@ import (
 
 // Worker represents the worker that executes the job
 type Worker struct {
-	WorkerPool chan chan GoJob
-	JobChannel chan GoJob
-	quit       chan bool
-	num        int
+	WorkerPool   chan chan GoJob
+	JobChannel   chan GoJob
+	FinishedJobs chan<- GoJob
+	quit         chan bool
+	num          int
 }
 
 // NewWorker constructs new Worker
-func NewWorker(num int, workerPool chan chan GoJob) *Worker {
+func NewWorker(num int, workerPool chan chan GoJob, finJobChan chan<- GoJob) *Worker {
 	return &Worker{
-		WorkerPool: workerPool,
-		JobChannel: make(chan GoJob),
-		quit:       make(chan bool),
-		num:        num,
+		WorkerPool:   workerPool,
+		FinishedJobs: finJobChan,
+		JobChannel:   make(chan GoJob),
+		quit:         make(chan bool),
+		num:          num,
 	}
 }
 
@@ -50,6 +52,7 @@ func (w *Worker) Start(wg *sync.WaitGroup) {
 			case job := <-w.JobChannel:
 				// we have received a work request.
 				job.DoIt()
+				w.FinishedJobs <- job
 
 			case <-w.quit:
 				// we have received a signal to stop

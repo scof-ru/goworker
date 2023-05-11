@@ -23,33 +23,38 @@ import (
 // Dispatcher starts workers and route jobs for it
 type Dispatcher struct {
 	// A pool of workers channels that are registered with the goworker
-	WorkerPool      chan chan GoJob
-	Workers         chan *Worker
-	maxWorkers      int
-	jobsQueue       chan GoJob
-	unperformedJobs []GoJob
-	stop            chan bool
-	stopped         chan bool
-	wg              *sync.WaitGroup
-	stopInProgress  bool
+	WorkerPool        chan chan GoJob
+	Workers           chan *Worker
+	maxWorkers        int
+	jobsQueue         chan GoJob
+	finishedJobsQueue chan GoJob
+	unperformedJobs   []GoJob
+	activeJobs        map[string]GoJob
+	stop              chan bool
+	stopped           chan bool
+	wg                *sync.WaitGroup
+	stopInProgress    bool
 }
 
 // NewDispatcher construct new Dispatcher
 func NewDispatcher(maxWorkers int, jobsQueueSize uint) *Dispatcher {
 	jobsQueue := make(chan GoJob, jobsQueueSize)
+	finishedJobsQueue := make(chan GoJob, jobsQueueSize)
 	var unperformedJobs []GoJob // when stop copy all jobs from jobsQueue to unperformedJobs
 	pool := make(chan chan GoJob, maxWorkers)
 	workers := make(chan *Worker, maxWorkers)
 	return &Dispatcher{
-		WorkerPool:      pool,
-		Workers:         workers,
-		maxWorkers:      maxWorkers,
-		jobsQueue:       jobsQueue,
-		unperformedJobs: unperformedJobs,
-		stop:            make(chan bool, 1),
-		stopped:         make(chan bool, 1),
-		wg:              &sync.WaitGroup{},
-		stopInProgress:  false,
+		WorkerPool:        pool,
+		Workers:           workers,
+		maxWorkers:        maxWorkers,
+		jobsQueue:         jobsQueue,
+		finishedJobsQueue: finishedJobsQueue,
+		unperformedJobs:   unperformedJobs,
+		stop:              make(chan bool, 1),
+		stopped:           make(chan bool, 1),
+		activeJobs:        make(map[string]GoJob),
+		wg:                &sync.WaitGroup{},
+		stopInProgress:    false,
 	}
 }
 
@@ -59,7 +64,7 @@ func (d *Dispatcher) Run() {
 	d.CleanUnperformedJobs()
 	// starting n number of workers
 	for i := 0; i < d.maxWorkers; i++ {
-		w := NewWorker(i, d.WorkerPool)
+		w := NewWorker(i, d.WorkerPool, d.finishedJobsQueue)
 		w.Start(d.wg)
 		d.Workers <- w
 	}
@@ -83,6 +88,7 @@ func (d *Dispatcher) dispatch() {
 			}
 		}
 
+		d.activeJobs = make(map[string]GoJob)
 		d.stopInProgress = false
 		d.stopped <- true
 	}()
@@ -96,10 +102,14 @@ func (d *Dispatcher) dispatch() {
 			// this will block until a worker is idle
 			case jobChannel := <-d.WorkerPool:
 				// dispatch the job to the worker job channel
+				d.activeJobs[job.GetId()] = job
 				jobChannel <- job
+			case finishedJob := <-d.finishedJobsQueue:
+				delete(d.activeJobs, finishedJob.GetId())
 			case <-d.stop:
 				// if need to exit save current job to unperformedJobs
 				d.unperformedJobs = append(d.unperformedJobs, job)
+				delete(d.activeJobs, job.GetId())
 				return
 			}
 		case <-d.stop:
@@ -152,6 +162,11 @@ func (d *Dispatcher) Stop() {
 // GetUnperformedJobs method returns a chan of GoJobs that have not been done before Stop() executed
 func (d *Dispatcher) GetUnperformedJobs() []GoJob {
 	return d.unperformedJobs
+}
+
+// GetUnperformedJobs method returns a chan of GoJobs that have not been done before Stop() executed
+func (d *Dispatcher) GetActiveJobs() map[string]GoJob {
+	return d.activeJobs
 }
 
 // CleanUnperformedJobs remove unperformedJobs
