@@ -104,14 +104,14 @@ func (d *Dispatcher) dispatch() {
 				// dispatch the job to the worker job channel
 				d.activeJobs[job.GetId()] = job
 				jobChannel <- job
-			case finishedJob := <-d.finishedJobsQueue:
-				delete(d.activeJobs, finishedJob.GetId())
 			case <-d.stop:
 				// if need to exit save current job to unperformedJobs
 				d.unperformedJobs = append(d.unperformedJobs, job)
 				delete(d.activeJobs, job.GetId())
 				return
 			}
+		case finishedJob := <-d.finishedJobsQueue:
+			delete(d.activeJobs, finishedJob.GetId())
 		case <-d.stop:
 			return
 		}
